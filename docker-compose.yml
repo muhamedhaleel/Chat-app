@@ -1,0 +1,62 @@
+services:
+
+  # ── MySQL Database ──────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.4
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: "1234"
+      MYSQL_DATABASE: chatapp_db
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3307:3306"      # expose on 3307 to avoid conflict with local MySQL
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p1234"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis (Channel Layer for WebSocket) ────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+
+  # ── Django Backend (Daphne ASGI) ───────────────────────────────────────────
+  backend:
+    build: ./backend
+    restart: always
+    ports:
+      - "8080:8000"      # host 8080 avoids conflict with local `manage.py runserver` on 8000
+    environment:
+      DJANGO_SECRET_KEY: "django-insecure-uwa)e0*2^z37rus14jw0%2kq&m98a!n+*h8e%*1hc!4v*aj=v#"
+      DEBUG: "true"
+      ALLOWED_HOSTS: "*"
+      DB_NAME: chatapp_db
+      DB_USER: root
+      DB_PASSWORD: "1234"
+      DB_HOST: db
+      DB_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./backend:/app    # hot-reload in dev; remove for production
+
+  # ── React Frontend (nginx) ─────────────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
